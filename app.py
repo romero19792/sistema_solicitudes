@@ -6,6 +6,7 @@ import os
 from dotenv import load_dotenv
 import logging
 import sys
+import traceback
 
 # Configurar logging
 logging.basicConfig(
@@ -21,6 +22,10 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'tu_clave_secreta_aqui')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///sistema.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 
 # Asegurarse de que la URL de la base de datos comience con postgresql://
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
@@ -106,6 +111,26 @@ def crear_tecnicos_iniciales():
         logger.error(f"Error al crear técnicos: {str(e)}")
         raise
 
+def init_db():
+    try:
+        logger.info("Iniciando creación de tablas...")
+        db.create_all()
+        logger.info("Tablas creadas exitosamente")
+        
+        logger.info("Iniciando creación de técnicos...")
+        crear_tecnicos_iniciales()
+        logger.info("Base de datos inicializada correctamente")
+    except Exception as e:
+        logger.error(f"Error al inicializar la base de datos: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"Error interno del servidor: {str(error)}")
+    logger.error(traceback.format_exc())
+    return "Error interno del servidor", 500
+
 # Rutas
 @app.route('/')
 def index():
@@ -170,6 +195,7 @@ def login():
             flash('Credenciales inválidas')
         except Exception as e:
             logger.error(f"Error en login: {str(e)}")
+            logger.error(traceback.format_exc())
             flash('Error al iniciar sesión')
     return render_template('login.html')
 
@@ -295,15 +321,5 @@ def devolver_solicitud(id):
 
 if __name__ == '__main__':
     with app.app_context():
-        try:
-            logger.info("Iniciando creación de tablas...")
-            db.create_all()
-            logger.info("Tablas creadas exitosamente")
-            
-            logger.info("Iniciando creación de técnicos...")
-            crear_tecnicos_iniciales()
-            logger.info("Base de datos inicializada correctamente")
-        except Exception as e:
-            logger.error(f"Error al inicializar la base de datos: {str(e)}")
-            raise
+        init_db()
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False) 
