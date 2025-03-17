@@ -9,6 +9,7 @@ import sys
 import traceback
 import psycopg2
 from psycopg2 import OperationalError
+from urllib.parse import urlparse
 
 # Configurar logging
 logging.basicConfig(
@@ -22,18 +23,20 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'tu_clave_secreta_aqui')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///sistema.db')
+
+# Configuración de la base de datos
+database_url = os.getenv('DATABASE_URL', 'sqlite:///sistema.db')
+if database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
-    'pool_size': 10,
-    'max_overflow': 20
+    'pool_size': 5,
+    'max_overflow': 10
 }
-
-# Asegurarse de que la URL de la base de datos comience con postgresql://
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
-    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace("postgres://", "postgresql://", 1)
 
 logger.info(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
 logger.info(f"Secret Key: {app.config['SECRET_KEY']}")
