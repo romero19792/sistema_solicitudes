@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 import logging
 import sys
 import traceback
+import psycopg2
+from psycopg2 import OperationalError
 
 # Configurar logging
 logging.basicConfig(
@@ -25,6 +27,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
+    'pool_size': 10,
+    'max_overflow': 20
 }
 
 # Asegurarse de que la URL de la base de datos comience con postgresql://
@@ -111,8 +115,22 @@ def crear_tecnicos_iniciales():
         logger.error(f"Error al crear técnicos: {str(e)}")
         raise
 
+def test_db_connection():
+    try:
+        # Intentar conectar directamente con psycopg2
+        conn = psycopg2.connect(app.config['SQLALCHEMY_DATABASE_URI'])
+        conn.close()
+        logger.info("Conexión a la base de datos exitosa")
+        return True
+    except OperationalError as e:
+        logger.error(f"Error de conexión a la base de datos: {str(e)}")
+        return False
+
 def init_db():
     try:
+        if not test_db_connection():
+            raise Exception("No se pudo conectar a la base de datos")
+            
         logger.info("Iniciando creación de tablas...")
         db.create_all()
         logger.info("Tablas creadas exitosamente")
@@ -176,6 +194,9 @@ def registro():
 def login():
     if request.method == 'POST':
         try:
+            if not test_db_connection():
+                raise Exception("Error de conexión a la base de datos")
+                
             email = request.form.get('email')
             password = request.form.get('password')
             logger.info(f"Intento de login para email: {email}")
