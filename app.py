@@ -7,11 +7,9 @@ from dotenv import load_dotenv
 import logging
 import sys
 import traceback
-import psycopg2
-from psycopg2 import OperationalError
 from urllib.parse import urlparse
 
-# Configurar logging
+# Configuración de logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,17 +23,17 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'tu_clave_secreta_aqui')
 
 # Configuración de la base de datos
-database_url = os.getenv('DATABASE_URL', 'sqlite:///sistema.db')
-if database_url.startswith("postgres://"):
+database_url = os.getenv('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///sistema.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
     'pool_size': 5,
-    'max_overflow': 10
+    'max_overflow': 10,
+    'connect_args': {'connect_timeout': 10}
 }
 
 logger.info(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
@@ -49,30 +47,38 @@ login_manager.login_view = 'login'
 # Modelos
 class Usuario(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)  # Hacemos el email opcional
     password = db.Column(db.String(120), nullable=False)
     nombre = db.Column(db.String(120), nullable=False)
     tipo = db.Column(db.String(20), nullable=False)  # 'docente' o 'tecnico'
 
     def __repr__(self):
-        return f'<Usuario {self.email}>'
+        return f'<Usuario {self.nombre}>'
 
 class Solicitud(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tipo = db.Column(db.String(50), nullable=False)  # 'computadora', 'cable_hdmi', 'cable_audio', 'asistencia'
+    tipo = db.Column(db.String(50), nullable=False)  # 'notebook', 'cable_hdmi', 'cable_audio', 'asistencia'
     estado = db.Column(db.String(20), nullable=False, default='pendiente')  # pendiente, aprobada, denegada, en_proceso, prestado, devuelto
     fecha_solicitud = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     docente_id = db.Column(db.Integer, db.ForeignKey('usuario.id'), nullable=False)
     tecnico_id = db.Column(db.Integer, db.ForeignKey('usuario.id'))
     descripcion = db.Column(db.Text)
     fecha_resolucion = db.Column(db.DateTime)
+    
+    # Relaciones
+    docente = db.relationship('Usuario', foreign_keys=[docente_id], backref='solicitudes_docente')
+    tecnico = db.relationship('Usuario', foreign_keys=[tecnico_id], backref='solicitudes_tecnico')
 
 class Material(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    tipo = db.Column(db.String(50), nullable=False)  # 'computadora', 'cable_hdmi', 'cable_audio'
+    tipo = db.Column(db.String(50), nullable=False)  # 'notebook', 'cable_hdmi', 'cable_audio'
     numero_identificacion = db.Column(db.String(50), unique=True, nullable=False)
     estado = db.Column(db.String(20), nullable=False, default='disponible')  # disponible, prestado
     solicitud_actual = db.Column(db.Integer, db.ForeignKey('solicitud.id'))
+    descripcion = db.Column(db.String(100))  # Para almacenar el nombre específico de la notebook
+
+    def __repr__(self):
+        return f'<Material {self.descripcion or self.numero_identificacion}>'
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -85,25 +91,24 @@ def load_user(user_id):
 def crear_tecnicos_iniciales():
     try:
         tecnicos = [
-            {'nombre': 'Juanjo', 'email': 'juanjo@institucion.edu', 'password': 'juanjo123'},
-            {'nombre': 'Lucas', 'email': 'lucas@institucion.edu', 'password': 'lucas123'},
-            {'nombre': 'Jorge', 'email': 'jorge@institucion.edu', 'password': 'jorge123'},
-            {'nombre': 'Alexander', 'email': 'alexander@institucion.edu', 'password': 'alexander123'}
+            {'nombre': 'Juanjo', 'password': '123456'},
+            {'nombre': 'Lucas', 'password': '123456'},
+            {'nombre': 'Jorge', 'password': '123456'},
+            {'nombre': 'Alexander', 'password': '123456'}
         ]
         
         for tecnico in tecnicos:
-            usuario_existente = Usuario.query.filter_by(email=tecnico['email']).first()
+            usuario_existente = Usuario.query.filter_by(nombre=tecnico['nombre']).first()
             if not usuario_existente:
-                logger.info(f"Creando técnico: {tecnico['email']}")
+                logger.info(f"Creando técnico: {tecnico['nombre']}")
                 nuevo_tecnico = Usuario(
                     nombre=tecnico['nombre'],
-                    email=tecnico['email'],
-                    password=tecnico['password'],  # En producción, usar hash de contraseña
+                    password=tecnico['password'],
                     tipo='tecnico'
                 )
                 db.session.add(nuevo_tecnico)
             else:
-                logger.info(f"Técnico ya existe: {tecnico['email']}")
+                logger.info(f"Técnico ya existe: {tecnico['nombre']}")
         
         db.session.commit()
         logger.info("Técnicos creados exitosamente")
@@ -112,21 +117,73 @@ def crear_tecnicos_iniciales():
         tecnicos_db = Usuario.query.filter_by(tipo='tecnico').all()
         logger.info(f"Técnicos en la base de datos: {len(tecnicos_db)}")
         for tecnico in tecnicos_db:
-            logger.info(f"Técnico: {tecnico.email}")
+            logger.info(f"Técnico: {tecnico.nombre}")
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error al crear técnicos: {str(e)}")
         raise
 
+def crear_materiales_iniciales():
+    try:
+        notebooks = [
+            {'tipo': 'notebook', 'numero_identificacion': 'NB001', 'descripcion': 'Lenovo nueva1'},
+            {'tipo': 'notebook', 'numero_identificacion': 'NB002', 'descripcion': 'Lenovo nueva2'},
+            {'tipo': 'notebook', 'numero_identificacion': 'NB003', 'descripcion': 'Lenovo vieja'},
+            {'tipo': 'notebook', 'numero_identificacion': 'NB004', 'descripcion': 'Bangho'},
+            {'tipo': 'notebook', 'numero_identificacion': 'NB005', 'descripcion': 'Plateada'}
+        ]
+        
+        for notebook in notebooks:
+            material_existente = Material.query.filter_by(numero_identificacion=notebook['numero_identificacion']).first()
+            if not material_existente:
+                logger.info(f"Creando notebook: {notebook['descripcion']}")
+                nuevo_material = Material(**notebook)
+                db.session.add(nuevo_material)
+            else:
+                logger.info(f"Notebook ya existe: {notebook['descripcion']}")
+        
+        db.session.commit()
+        logger.info("Notebooks creadas exitosamente")
+        
+        # Verificar notebooks creadas
+        notebooks_db = Material.query.filter_by(tipo='notebook').all()
+        logger.info(f"Notebooks en la base de datos: {len(notebooks_db)}")
+        for notebook in notebooks_db:
+            logger.info(f"Notebook: {notebook.descripcion} - Estado: {notebook.estado}")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al crear notebooks: {str(e)}")
+        raise
+
 def test_db_connection():
     try:
-        # Intentar conectar directamente con psycopg2
-        conn = psycopg2.connect(app.config['SQLALCHEMY_DATABASE_URI'])
+        if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+            # Para SQLite, solo verificamos que el directorio existe
+            db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+            if db_path:
+                os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            logger.info("Conexión a SQLite verificada")
+            return True
+            
+        # Para PostgreSQL
+        import psycopg2
+        from psycopg2 import OperationalError
+        
+        parsed = urlparse(app.config['SQLALCHEMY_DATABASE_URI'])
+        conn = psycopg2.connect(
+            dbname=parsed.path[1:],
+            user=parsed.username,
+            password=parsed.password,
+            host=parsed.hostname,
+            port=parsed.port,
+            connect_timeout=10
+        )
         conn.close()
-        logger.info("Conexión a la base de datos exitosa")
+        logger.info("Conexión a PostgreSQL exitosa")
         return True
-    except OperationalError as e:
+    except Exception as e:
         logger.error(f"Error de conexión a la base de datos: {str(e)}")
+        logger.error(traceback.format_exc())
         return False
 
 def init_db():
@@ -140,6 +197,12 @@ def init_db():
         
         logger.info("Iniciando creación de técnicos...")
         crear_tecnicos_iniciales()
+        logger.info("Técnicos creados exitosamente")
+        
+        logger.info("Iniciando creación de notebooks...")
+        crear_materiales_iniciales()
+        logger.info("Notebooks creadas exitosamente")
+        
         logger.info("Base de datos inicializada correctamente")
     except Exception as e:
         logger.error(f"Error al inicializar la base de datos: {str(e)}")
@@ -162,7 +225,6 @@ def registro():
     if request.method == 'POST':
         try:
             nombre = request.form.get('nombre')
-            email = request.form.get('email')
             password = request.form.get('password')
             confirm_password = request.form.get('confirm_password')
             
@@ -170,13 +232,12 @@ def registro():
                 flash('Las contraseñas no coinciden')
                 return redirect(url_for('registro'))
             
-            if Usuario.query.filter_by(email=email).first():
-                flash('El correo electrónico ya está registrado')
+            if Usuario.query.filter_by(nombre=nombre).first():
+                flash('El nombre de usuario ya está registrado')
                 return redirect(url_for('registro'))
             
             nuevo_docente = Usuario(
                 nombre=nombre,
-                email=email,
                 password=password,  # En producción, usar hash de contraseña
                 tipo='docente'
             )
@@ -197,24 +258,21 @@ def registro():
 def login():
     if request.method == 'POST':
         try:
-            if not test_db_connection():
-                raise Exception("Error de conexión a la base de datos")
-                
-            email = request.form.get('email')
+            nombre = request.form.get('nombre')
             password = request.form.get('password')
-            logger.info(f"Intento de login para email: {email}")
+            logger.info(f"Intento de login para usuario: {nombre}")
             
-            user = Usuario.query.filter_by(email=email).first()
+            user = Usuario.query.filter_by(nombre=nombre).first()
             if user:
-                logger.info(f"Usuario encontrado: {user.email}, tipo: {user.tipo}")
+                logger.info(f"Usuario encontrado: {user.nombre}, tipo: {user.tipo}")
                 if user.password == password:  # En producción, usar hash de contraseña
                     login_user(user)
-                    logger.info(f"Login exitoso para: {user.email}")
+                    logger.info(f"Login exitoso para: {user.nombre}")
                     return redirect(url_for('dashboard'))
                 else:
-                    logger.warning(f"Contraseña incorrecta para: {email}")
+                    logger.warning(f"Contraseña incorrecta para: {nombre}")
             else:
-                logger.warning(f"Usuario no encontrado: {email}")
+                logger.warning(f"Usuario no encontrado: {nombre}")
             
             flash('Credenciales inválidas')
         except Exception as e:
@@ -254,9 +312,19 @@ def nueva_solicitud():
             tipo = request.form.get('tipo')
             descripcion = request.form.get('descripcion')
             docente_id = request.form.get('docente_id')
+            notebook_id = request.form.get('notebook')
+            
+            logger.info(f"Tipo de solicitud recibido: {tipo}")
+            logger.info(f"Descripción: {descripcion}")
+            logger.info(f"ID del docente: {docente_id}")
+            logger.info(f"ID de la notebook: {notebook_id}")
             
             if current_user.tipo == 'tecnico' and not docente_id:
                 flash('Debe seleccionar un docente')
+                return redirect(url_for('nueva_solicitud'))
+            
+            if tipo == 'notebook' and not notebook_id:
+                flash('Debe seleccionar una notebook')
                 return redirect(url_for('nueva_solicitud'))
             
             nueva_solicitud = Solicitud(
@@ -265,6 +333,15 @@ def nueva_solicitud():
                 docente_id=docente_id if current_user.tipo == 'tecnico' else current_user.id
             )
             db.session.add(nueva_solicitud)
+            db.session.flush()  # Para obtener el ID de la solicitud
+            
+            if tipo == 'notebook' and notebook_id:
+                notebook = Material.query.get(notebook_id)
+                if notebook and notebook.estado == 'disponible':
+                    notebook.estado = 'prestado'
+                    notebook.solicitud_actual = nueva_solicitud.id
+                    db.session.add(notebook)
+            
             db.session.commit()
             flash('Solicitud creada exitosamente')
             return redirect(url_for('dashboard'))
@@ -276,7 +353,12 @@ def nueva_solicitud():
     
     try:
         docentes = Usuario.query.filter_by(tipo='docente').all() if current_user.tipo == 'tecnico' else None
-        return render_template('nueva_solicitud.html', docentes=docentes)
+        # Obtener notebooks disponibles
+        notebooks_disponibles = Material.query.filter_by(tipo='notebook', estado='disponible').all()
+        logger.info(f"Notebooks disponibles: {len(notebooks_disponibles)}")
+        for notebook in notebooks_disponibles:
+            logger.info(f"Notebook disponible: {notebook.descripcion}")
+        return render_template('nueva_solicitud.html', docentes=docentes, notebooks=notebooks_disponibles)
     except Exception as e:
         logger.error(f"Error al cargar formulario de nueva solicitud: {str(e)}")
         flash('Error al cargar el formulario')
@@ -293,7 +375,7 @@ def aprobar_solicitud(id):
         solicitud.estado = 'aprobada'
         solicitud.tecnico_id = current_user.id
         
-        if solicitud.tipo in ['computadora', 'cable_hdmi', 'cable_audio']:
+        if solicitud.tipo in ['notebook', 'cable_hdmi', 'cable_audio']:
             solicitud.estado = 'prestado'
         
         db.session.commit()
@@ -333,6 +415,14 @@ def devolver_solicitud(id):
         if solicitud.estado == 'prestado':
             solicitud.estado = 'devuelto'
             solicitud.fecha_resolucion = datetime.utcnow()
+            
+            # Si es una notebook, actualizar su estado
+            if solicitud.tipo == 'notebook':
+                notebook = Material.query.filter_by(solicitud_actual=solicitud.id).first()
+                if notebook:
+                    notebook.estado = 'disponible'
+                    notebook.solicitud_actual = None
+            
             db.session.commit()
             flash('Material marcado como devuelto')
         else:
