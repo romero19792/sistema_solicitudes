@@ -175,8 +175,12 @@ def test_db_connection():
             user=parsed.username,
             password=parsed.password,
             host=parsed.hostname,
+<<<<<<< HEAD
             port=parsed.port,
             connect_timeout=10
+=======
+            port=parsed.port
+>>>>>>> b34a90258e5a883df8941b42bdd1f90e0fd5ede3
         )
         conn.close()
         logger.info("Conexión a PostgreSQL exitosa")
