@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sistema-solicitudes
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --config gunicorn_config.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.8.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sistema_solicitudes_db
+          property: connectionString
+    healthCheckPath: /
+    autoDeploy: true
+    plan: free 
