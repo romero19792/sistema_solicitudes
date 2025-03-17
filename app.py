@@ -24,19 +24,27 @@ app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'tu_clave_secreta_aqui')
 
 # Configuración de la base de datos
 database_url = os.getenv('DATABASE_URL')
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///sistema.db'
+logger.info(f"URL de base de datos original: {database_url}")
+
+if database_url:
+    # Asegurarse de que la URL comience con postgresql://
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # URL por defecto para desarrollo local
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sistema.db'
+
+logger.info(f"URL de base de datos final: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
     'pool_size': 5,
-    'max_overflow': 10,
-    'connect_args': {'connect_timeout': 10}
+    'max_overflow': 10
 }
 
-logger.info(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
 logger.info(f"Secret Key: {app.config['SECRET_KEY']}")
 
 db = SQLAlchemy(app)
@@ -175,12 +183,8 @@ def test_db_connection():
             user=parsed.username,
             password=parsed.password,
             host=parsed.hostname,
-<<<<<<< HEAD
             port=parsed.port,
             connect_timeout=10
-=======
-            port=parsed.port
->>>>>>> b34a90258e5a883df8941b42bdd1f90e0fd5ede3
         )
         conn.close()
         logger.info("Conexión a PostgreSQL exitosa")
