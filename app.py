@@ -5,9 +5,14 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import logging
+import sys
 
 # Configurar logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -22,6 +27,7 @@ if app.config['SQLALCHEMY_DATABASE_URI'].startswith("postgres://"):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace("postgres://", "postgresql://", 1)
 
 logger.info(f"Database URL: {app.config['SQLALCHEMY_DATABASE_URI']}")
+logger.info(f"Secret Key: {app.config['SECRET_KEY']}")
 
 db = SQLAlchemy(app)
 login_manager = LoginManager()
@@ -35,6 +41,9 @@ class Usuario(UserMixin, db.Model):
     password = db.Column(db.String(120), nullable=False)
     nombre = db.Column(db.String(120), nullable=False)
     tipo = db.Column(db.String(20), nullable=False)  # 'docente' o 'tecnico'
+
+    def __repr__(self):
+        return f'<Usuario {self.email}>'
 
 class Solicitud(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -71,7 +80,9 @@ def crear_tecnicos_iniciales():
         ]
         
         for tecnico in tecnicos:
-            if not Usuario.query.filter_by(email=tecnico['email']).first():
+            usuario_existente = Usuario.query.filter_by(email=tecnico['email']).first()
+            if not usuario_existente:
+                logger.info(f"Creando técnico: {tecnico['email']}")
                 nuevo_tecnico = Usuario(
                     nombre=tecnico['nombre'],
                     email=tecnico['email'],
@@ -79,12 +90,21 @@ def crear_tecnicos_iniciales():
                     tipo='tecnico'
                 )
                 db.session.add(nuevo_tecnico)
+            else:
+                logger.info(f"Técnico ya existe: {tecnico['email']}")
         
         db.session.commit()
         logger.info("Técnicos creados exitosamente")
+        
+        # Verificar técnicos creados
+        tecnicos_db = Usuario.query.filter_by(tipo='tecnico').all()
+        logger.info(f"Técnicos en la base de datos: {len(tecnicos_db)}")
+        for tecnico in tecnicos_db:
+            logger.info(f"Técnico: {tecnico.email}")
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error al crear técnicos: {str(e)}")
+        raise
 
 # Rutas
 @app.route('/')
@@ -133,11 +153,20 @@ def login():
         try:
             email = request.form.get('email')
             password = request.form.get('password')
-            user = Usuario.query.filter_by(email=email).first()
+            logger.info(f"Intento de login para email: {email}")
             
-            if user and user.password == password:  # En producción, usar hash de contraseña
-                login_user(user)
-                return redirect(url_for('dashboard'))
+            user = Usuario.query.filter_by(email=email).first()
+            if user:
+                logger.info(f"Usuario encontrado: {user.email}, tipo: {user.tipo}")
+                if user.password == password:  # En producción, usar hash de contraseña
+                    login_user(user)
+                    logger.info(f"Login exitoso para: {user.email}")
+                    return redirect(url_for('dashboard'))
+                else:
+                    logger.warning(f"Contraseña incorrecta para: {email}")
+            else:
+                logger.warning(f"Usuario no encontrado: {email}")
+            
             flash('Credenciales inválidas')
         except Exception as e:
             logger.error(f"Error en login: {str(e)}")
@@ -267,9 +296,14 @@ def devolver_solicitud(id):
 if __name__ == '__main__':
     with app.app_context():
         try:
+            logger.info("Iniciando creación de tablas...")
             db.create_all()
+            logger.info("Tablas creadas exitosamente")
+            
+            logger.info("Iniciando creación de técnicos...")
             crear_tecnicos_iniciales()
             logger.info("Base de datos inicializada correctamente")
         except Exception as e:
             logger.error(f"Error al inicializar la base de datos: {str(e)}")
+            raise
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=False) 
