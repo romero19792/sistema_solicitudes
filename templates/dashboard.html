@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2>Dashboard</h2>
+        <p class="text-muted">Bienvenido, {{ current_user.nombre }}</p>
+    </div>
+    {% if current_user.tipo in ['docente', 'tecnico'] %}
+    <div class="col text-end">
+        <a href="{{ url_for('nueva_solicitud') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Nueva Solicitud
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Mis Solicitudes</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tipo</th>
+                                <th>Estado</th>
+                                <th>Fecha</th>
+                                <th>Descripción</th>
+                                {% if current_user.tipo == 'tecnico' %}
+                                <th>Acciones</th>
+                                {% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for solicitud in solicitudes %}
+                            <tr>
+                                <td>{{ solicitud.id }}</td>
+                                <td>
+                                    {% if solicitud.tipo == 'computadora' %}
+                                        <i class="bi bi-laptop"></i> Computadora
+                                    {% elif solicitud.tipo == 'cable_hdmi' %}
+                                        <i class="bi bi-hdmi"></i> Cable HDMI
+                                    {% elif solicitud.tipo == 'cable_audio' %}
+                                        <i class="bi bi-music-note"></i> Cable Audio
+                                    {% else %}
+                                        <i class="bi bi-tools"></i> Asistencia Técnica
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 
+                                        'warning' if solicitud.estado == 'pendiente'
+                                        else 'success' if solicitud.estado == 'aprobada'
+                                        else 'danger' if solicitud.estado == 'denegada'
+                                        else 'info' if solicitud.estado == 'en_proceso'
+                                        else 'primary' if solicitud.estado == 'prestado'
+                                        else 'secondary' if solicitud.estado == 'devuelto'
+                                        else 'secondary'
+                                    }}">
+                                        {{ solicitud.estado.replace('_', ' ').title() }}
+                                    </span>
+                                </td>
+                                <td>{{ solicitud.fecha_solicitud.strftime('%d/%m/%Y %H:%M') }}</td>
+                                <td>{{ solicitud.descripcion }}</td>
+                                {% if current_user.tipo == 'tecnico' and solicitud.estado == 'pendiente' %}
+                                <td>
+                                    <form method="POST" action="{{ url_for('aprobar_solicitud', id=solicitud.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-sm btn-success">
+                                            <i class="bi bi-check-circle"></i> Aprobar
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('denegar_solicitud', id=solicitud.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            <i class="bi bi-x-circle"></i> Denegar
+                                        </button>
+                                    </form>
+                                </td>
+                                {% elif current_user.tipo == 'tecnico' and solicitud.estado == 'prestado' %}
+                                <td>
+                                    <form method="POST" action="{{ url_for('devolver_solicitud', id=solicitud.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-sm btn-info">
+                                            <i class="bi bi-arrow-return-left"></i> Marcar como Devuelto
+                                        </button>
+                                    </form>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="6" class="text-center">No hay solicitudes disponibles</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

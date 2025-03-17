@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Inicio{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="text-center">Sistema de Solicitudes</h3>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('login') }}" class="btn btn-primary">Iniciar Sesión</a>
+                        <a href="{{ url_for('registro') }}" class="btn btn-success">Registrarse como Docente</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-laptop display-4 text-primary mb-3"></i>
+                <h3 class="card-title">Solicitud de Materiales</h3>
+                <p class="card-text">Solicita computadoras, cables HDMI y cables de audio cuando los necesites.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-tools display-4 text-primary mb-3"></i>
+                <h3 class="card-title">Asistencia Técnica</h3>
+                <p class="card-text">Solicita ayuda técnica para resolver problemas con equipos o sistemas.</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-bell display-4 text-primary mb-3"></i>
+                <h3 class="card-title">Seguimiento en Tiempo Real</h3>
+                <p class="card-text">Mantente informado del estado de tus solicitudes en todo momento.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
